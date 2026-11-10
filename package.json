@@ -1,5 +1,5 @@
 {
-  "name": "rapido-backend",
+  "name": "backend",
   "version": "1.0.0",
   "description": "Modular Monolith Backend for Rapido",
   "main": "src/server.js",

@@ -68,14 +68,14 @@ exports.requestOTP = async (req, res) => {
     console.error("requestOTP error:", error);
     res
       .status(500)
-      .json({ error: error.message || "Could not send OTP. Check Exotel gateway." });
+      .json({ error: error.message || "Could not send OTP. Check MSG91 SMS gateway." });
   }
 };
 
 // 🟢 2. VERIFY OTP
 exports.verifyOTP = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    const { phone, otp, role, verifyOnly } = req.body;
     if (!phone || !otp) {
       return res.status(400).json({ error: "Phone and OTP are required" });
     }
@@ -102,6 +102,55 @@ exports.verifyOTP = async (req, res) => {
       return res.status(400).json({ error: "Invalid or expired OTP. Please try again." });
     }
 
+    // Delete the used OTP record if present
+    if (otpRecord) {
+      await Otp.deleteOne({ _id: otpRecord._id });
+    }
+
+    if (verifyOnly) {
+      return res.status(200).json({
+        success: true,
+        verified: true,
+      });
+    }
+
+    const secretKey = process.env.JWT_SECRET || 'your_super_secret_jwt_key_rapido_2026qefiubkj';
+
+    // Driver OTP verification flow (uses same MSG91 OTP & backend without creating Customer)
+    if (role && role.toString().toUpperCase() === "DRIVER") {
+      const driver = await Driver.findOne({ phone: { $in: phoneVariants } });
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Driver not found. Please register." });
+      }
+
+      const token = jwt.sign(
+        { id: driver._id, role: "DRIVER" },
+        secretKey,
+        { expiresIn: "30d" },
+      );
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const ridesToday = await Ride.aggregate([
+        { $match: { driverId: driver._id, status: "COMPLETED", endTime: { $gte: startOfDay } } },
+        { $group: { _id: null, total: { $sum: "$driverNetEarning" } } }
+      ]);
+      const todayEarnings = ridesToday.length > 0 ? ridesToday[0].total : 0;
+
+      const driverResponse = driver.toObject();
+      driverResponse.todayEarnings = todayEarnings;
+
+      return res.status(200).json({
+        success: true,
+        token,
+        driver: driverResponse,
+      });
+    }
+
     // OTP is correct! Now find or create the Customer
     const formattedPhone = `+91${tenDigits}`;
     let isNew = false;
@@ -119,13 +168,7 @@ exports.verifyOTP = async (req, res) => {
       });
     }
 
-    // Delete the used OTP record if present
-    if (otpRecord) {
-      await Otp.deleteOne({ _id: otpRecord._id });
-    }
-
     // Generate JWT Token
-    const secretKey = process.env.JWT_SECRET || 'your_super_secret_jwt_key_rapido_2026qefiubkj';
     const token = jwt.sign(
       { id: customer._id, role: "CUSTOMER" },
       secretKey,
@@ -147,9 +190,12 @@ exports.verifyOTP = async (req, res) => {
 exports.driverLogin = async (req, res) => {
   try {
     const { phone } = req.body;
+    const cleanPhone = (phone || "").toString().trim();
+    const tenDigits = getTenDigits(cleanPhone);
+    const phoneVariants = [cleanPhone, `+91${tenDigits}`, tenDigits].filter(Boolean);
 
     // 1. Find the driver in MongoDB
-    const driver = await Driver.findOne({ phone });
+    const driver = await Driver.findOne({ phone: { $in: phoneVariants } });
 
     if (!driver) {
       return res
