@@ -17,6 +17,13 @@ const {
   deleteNotification,
   getAudienceStats,
 } = require("../controllers/adminController");
+const {
+  adminGetTickets,
+  adminCreateTicket,
+  adminUpdateTicket,
+  adminReplyTicket,
+  adminDeleteTicket,
+} = require("../controllers/supportController");
 
 router.use(verifyAdminSecret);
 
@@ -37,5 +44,12 @@ router.get("/notifications", getNotifications);
 router.post("/notifications/send", sendCustomNotification);
 router.delete("/notifications/:id", deleteNotification);
 router.get("/notifications/audience-stats", getAudienceStats);
+
+// Support Tickets Endpoints
+router.get("/support/tickets", adminGetTickets);
+router.post("/support/tickets", adminCreateTicket);
+router.patch("/support/tickets/:id", adminUpdateTicket);
+router.post("/support/tickets/:id/messages", adminReplyTicket);
+router.delete("/support/tickets/:id", adminDeleteTicket);
 
 module.exports = router;

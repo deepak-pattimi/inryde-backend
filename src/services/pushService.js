@@ -218,9 +218,35 @@ const sendBroadcastNotification = async ({
     }
 };
 
+// 🟢 5. NOTIFY DRIVER ON ACCOUNT VERIFICATION / STATUS CHANGE
+const notifyDriverStatus = async (driver, status) => {
+    try {
+        if (!driver || !driver.pushToken || !Expo.isExpoPushToken(driver.pushToken)) return;
+        const isApproved = status === "APPROVED";
+        const title = isApproved ? "🎉 Profile Approved!" : "Profile Status Update";
+        const body = isApproved
+            ? "Your documents have been verified. You can now go online and receive ride requests!"
+            : `Your driver profile status has been updated to ${status}.`;
+
+        await expo.sendPushNotificationsAsync([{
+            to: driver.pushToken,
+            sound: "default",
+            title,
+            body,
+            data: { type: "driver_status_update", status },
+            priority: "high",
+            channelId: "default",
+        }]);
+        console.log(`🔔 Sent status update notification to driver: ${driver._id} (${status})`);
+    } catch (error) {
+        console.error("❌ Driver status notification error:", error);
+    }
+};
+
 module.exports = { 
     notifyNearbyDrivers, 
     notifyCustomer, 
     notifyCustomerGeneric,
-    sendBroadcastNotification 
+    sendBroadcastNotification,
+    notifyDriverStatus,
 };

@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   requestOTP,
   verifyOTP,
+  checkDriver,
   driverLogin,
   driverRegister,
   customerLogin,
@@ -12,6 +13,7 @@ const {
 router.post("/request-otp", requestOTP);
 router.post("/verify-otp", verifyOTP);
 
+router.post("/check-driver", checkDriver);
 router.post("/driver-login", driverLogin);
 router.post("/driver-register", driverRegister);
 

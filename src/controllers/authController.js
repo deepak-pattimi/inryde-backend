@@ -187,6 +187,31 @@ exports.verifyOTP = async (req, res) => {
   }
 };
 
+exports.checkDriver = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    const cleanPhone = (phone || "").toString().trim();
+    const tenDigits = getTenDigits(cleanPhone);
+
+    if (tenDigits.length !== 10) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Please enter a valid 10-digit mobile number." });
+    }
+
+    const phoneVariants = [cleanPhone, `+91${tenDigits}`, tenDigits].filter(Boolean);
+    const driver = await Driver.findOne({ phone: { $in: phoneVariants } }).select("_id");
+
+    return res.status(200).json({
+      success: true,
+      exists: Boolean(driver),
+    });
+  } catch (error) {
+    console.error("checkDriver error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 exports.driverLogin = async (req, res) => {
   try {
     const { phone } = req.body;
@@ -242,8 +267,11 @@ exports.driverRegister = async (req, res) => {
   try {
     const payload = req.body;
 
-    // 1. Check if they already exist
-    const existingDriver = await Driver.findOne({ phone: payload.phone });
+    // 1. Check if they already exist (across phone format variants)
+    const rawPhone = (payload.phone || "").toString().trim();
+    const tenDigits = getTenDigits(rawPhone);
+    const phoneVariants = [rawPhone, tenDigits ? `+91${tenDigits}` : "", tenDigits].filter(Boolean);
+    const existingDriver = await Driver.findOne({ phone: { $in: phoneVariants } });
     if (existingDriver) {
       return res
         .status(400)

@@ -3,7 +3,7 @@ const Driver = require("../models/Driver");
 const Ride = require("../models/Ride");
 const Otp = require("../models/Otp");
 const Notification = require("../models/Notification");
-const { sendBroadcastNotification } = require("../services/pushService");
+const { sendBroadcastNotification, notifyDriverStatus } = require("../services/pushService");
 
 const normalizeCustomer = (customer) => ({
   id: customer._id,
@@ -60,13 +60,13 @@ exports.deleteCustomer = async (req, res) => {
     // Cancel any active rides
     try {
       await Ride.updateMany(
-        { 
-          customerId: id, 
-          status: { $in: ['SEARCHING', 'PENDING', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } 
+        {
+          customerId: id,
+          status: { $in: ['SEARCHING', 'PENDING', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
         },
-        { 
-          status: 'CANCELLED', 
-          cancellationReason: 'Customer account deleted by admin' 
+        {
+          status: 'CANCELLED',
+          cancellationReason: 'Customer account deleted by admin'
         }
       );
     } catch (e) {
@@ -102,13 +102,13 @@ exports.deleteDriver = async (req, res) => {
     // Cancel active rides
     try {
       await Ride.updateMany(
-        { 
-          driverId: id, 
-          status: { $in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } 
+        {
+          driverId: id,
+          status: { $in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
         },
-        { 
-          status: 'CANCELLED', 
-          cancellationReason: 'Driver account deleted by admin' 
+        {
+          status: 'CANCELLED',
+          cancellationReason: 'Driver account deleted by admin'
         }
       );
     } catch (e) {
@@ -204,6 +204,27 @@ exports.updateDriver = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "Driver not found" });
+
+    // 🟢 Real-time WebSocket emission to driver room
+    try {
+      const io = req.app.get("io");
+      if (io) {
+        io.to(id.toString()).emit("driverStatusUpdated", {
+          status: driver.status,
+          isOnline: driver.isOnline,
+        });
+      }
+    } catch (wsErr) {
+      console.error("Error emitting driverStatusUpdated:", wsErr);
+    }
+
+    // 🟢 Send push notification if status was updated
+    if (body.status && driver.pushToken) {
+      notifyDriverStatus(driver, body.status).catch((e) =>
+        console.error("Push notify error:", e)
+      );
+    }
+
     res.json({ success: true, driver: normalizeDriver(driver) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -241,7 +262,7 @@ exports.getLogs = async (req, res) => {
     if (!fs.existsSync(logFilePath)) {
       return res.json({ success: true, logs: [] });
     }
-    
+
     const content = fs.readFileSync(logFilePath, "utf8");
     const formattedLogs = content
       .split("\n")
